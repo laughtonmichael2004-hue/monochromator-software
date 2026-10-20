@@ -39,42 +39,61 @@ def actuator_angle_to_wavelength(theta_deg):
 
 # Main
 
+# First , will just hardcode a list of the file paths for now, then later will modify to scrape the directory 
+# for all files with a certain name pattern (e.g. spectrum*.txt) and then plot all of them and average them.
+
 save_fig = False
+counter = 0
+total_sum_photocurrent = []
+
+# Need to define the prefix and suffix before use, used to strip file name to only the identifiable component
+path_prefix = "C:\\Users\\laugh\\Documents\\MPhys_Projects_Code\\D2lamp_128nm_stability_(08-10-2026)\\"
+path_suffix = ".txt"
 
 path_file1 = "C:\\Users\\laugh\\Documents\\MPhys_Projects_Code\\D2lamp_128nm_stability_(08-10-2026)\\spectrum53V_081026.txt"
 path_file2 = "C:\\Users\\laugh\\Documents\\MPhys_Projects_Code\\D2lamp_128nm_stability_(08-10-2026)\\spectrum53Va_081026.txt"
 
-try: 
-    df1 = pd.read_csv(path_file1)
-    df2 = pd.read_csv(path_file2)
-except:
-    print("One of the files failed to load.")
-else:
-    print(df1.head()) # Checks the file has loaded properly (needs a try, except)
-    print(df2.head())
-
-angle1 = df1["angle_deg"]
-photocurrent1 = df1["current_mean_A"]
-photocurrent_std1 = df1["current_std_A"] / np.sqrt(df1["n_samples"]) # errors are negligible
-
-wavelength_calibrated1 = actuator_angle_to_wavelength(angle1)
-
-angle2 = df2["angle_deg"]
-photocurrent2 = df2["current_mean_A"]
-photocurrent_std2 = df2["current_std_A"] / np.sqrt(df2["n_samples"]) # errors are negligible
-
-wavelength_calibrated2 = actuator_angle_to_wavelength(angle2)
-
-photocurrent_avg = (photocurrent1 + photocurrent2) / 2 # Averaging the photocurrents, assuming they have the same range of angles (I checked they do)
+path_files = [path_file1, path_file2]
 
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
 
-# Plot 1 : Raw Data (angles)
-ax1.errorbar(angle1, photocurrent1, yerr=photocurrent_std1, fmt='.',label=f"Spectrum 1", zorder=1)
+# Assume file format as follows: angle_deg,epos,current_mean_A,current_std_A,n_samples
+for path_file in path_files:
+    try:
+        trimmed_path_file = path_file.lstrip(path_prefix).rstrip(path_suffix)
 
-ax1.errorbar(angle2, photocurrent2, yerr=photocurrent_std2, fmt='.', linewidth=1, label=f"Spectrum 2", zorder=1)
+        df = pd.read_csv(path_file)
 
-ax1.plot(angle2, photocurrent_avg, 'r-', linewidth=1, label="Average", zorder=2)
+        angle = df["angle_deg"]
+        photocurrent = df["current_mean_A"]
+        photocurrent_std = df["current_std_A"] / np.sqrt(df["n_samples"]) # errors are negligible
+
+        wavelength_calibrated = actuator_angle_to_wavelength(angle)
+
+        # Plot 1 : Raw Data (angles)
+        ax1.errorbar(angle, photocurrent, yerr=photocurrent_std, fmt='.',label=f"{trimmed_path_file}", zorder=1)
+
+        # Plot 2 : Calibrated Spectrum
+        # Will the error be affected by the calibration? I think not, as the calibration is a function of angle, which is a constant for each data point. 
+        # So the error should remain the same.
+
+        ax2.errorbar(wavelength_calibrated, photocurrent, yerr=photocurrent_std, fmt='.',label=f"{trimmed_path_file}", zorder=1)
+
+        if counter == 0:
+            total_sum_photocurrent = photocurrent
+            counter += 1
+        else:
+            total_sum_photocurrent += photocurrent
+
+    except:
+        print(f"File {path_file} failed to load.")
+    #else:
+        #print(df.head()) # Checks the file has loaded properly (needs a try, except)
+
+photocurrent_avg = total_sum_photocurrent / (len(path_files))
+
+ax1.plot(angle, photocurrent_avg, 'r-', linewidth=1, label="Average", zorder=2)
+ax2.plot(wavelength_calibrated, photocurrent_avg, 'r-', linewidth=1, label="Average")
 
 ax1.set_xlabel('Actuator Angle (degrees)', fontsize=12)
 ax1.set_ylabel('Photocurrent (A)', fontsize=12)
@@ -83,15 +102,6 @@ ax1.set_yscale('log')
 ax1.grid(True, alpha=0.3)
 
 ax1.legend()
-
-# Plot 2 : Calibrated Spectrum
-# Will the error be affected by the calibration? I think not, as the calibration is a function of angle, which is a constant for each data point. So the error should remain the same.
-
-ax2.errorbar(wavelength_calibrated1, photocurrent1, yerr=photocurrent_std1, fmt='.',label=f"Spectrum 1", zorder=1)
-
-ax2.errorbar(wavelength_calibrated2, photocurrent2, yerr=photocurrent_std2, fmt='.', label=f"Spectrum 2", zorder=1)
-
-ax2.plot(wavelength_calibrated2, photocurrent_avg, 'r-', linewidth=1, label="Average")
 
 ax2.set_xlabel('Wavelength (nm)', fontsize=12)
 ax2.set_ylabel('Photocurrent (A)', fontsize=12)
