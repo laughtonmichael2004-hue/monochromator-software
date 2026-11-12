@@ -2,7 +2,7 @@ import os
 import sys
 import traceback
 
-from packs.core.io                import read_config_file
+from packs.core.io import read_config_file
 from stability import stability
 from packs.acq.acq_utils import spectrum
 

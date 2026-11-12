@@ -2,7 +2,7 @@ import os
 import sys
 import traceback
 
-from packs.core.io import read_config_file
+from Squid.packs.core.io import read_config_file
 from packs.ana.ana_utils import stability_analysis
 from packs.ana.ana_utils import stability_analysis_volatility
 
