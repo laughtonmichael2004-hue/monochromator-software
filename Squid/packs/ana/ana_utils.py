@@ -22,7 +22,7 @@ def stability_analysis(
     '''
     # Set up the outpath for the figure
     # need to remove the txt?
-    out_path = Path(f"{save_name}_stability_analysis_report.png")
+    out_path = Path(save_name).with_name(f"{Path(save_name).stem}_stability_analysis_report.png")
     if out_path.exists() and not overwrite:
         raise FileExistsError(f"{out_path} exists; set overwrite = True to replace it.")
 
@@ -56,7 +56,7 @@ def stability_analysis(
 
     # Is sort of redundant if only one postion hole taken...
     for pos in position_vals:
-        out_path_txt = Path(f"{save_name}_{pos}.txt")
+        out_path_txt = Path(save_name).with_name(f"{Path(save_name).stem}_{pos}.txt")
         if out_path_txt.exists() and not overwrite:
             raise FileExistsError(f"{out_path_txt} exists; set overwrite = True to replace it.")
 
@@ -65,7 +65,7 @@ def stability_analysis(
         ax.errorbar(temp_df['timestamp'], temp_df['current_mean_A'], yerr=temp_df['current_std_A'] / np.sqrt(temp_df['n_samples']), linestyle='-', linewidth=1, fmt='o', markersize=3, elinewidth=1, capsize=2, label=f'Position - {pos}')
 
         if save_txt:
-            temp_df.to_csv(f"{out_path}_{pos}.txt", index=False)
+            temp_df.to_csv(out_path_txt, index=False)
 
 
     ax.set_title(f'Deuterium Lamp Stability Test - 7.8 degrees - {experiment_date}', fontsize=14)
@@ -82,7 +82,7 @@ def stability_analysis(
     fig.autofmt_xdate(rotation=30, ha='right')
 
     if save:
-        plt.savefig(f"{out_path}.png", dpi=600, bbox_inches='tight')
+        plt.savefig(f"{out_path}", dpi=600, bbox_inches='tight')
 
     plt.tight_layout()
     if not no_show:
@@ -104,7 +104,7 @@ def stability_analysis_volatility(
     Output values are printed to the console and the plot is saved as a .png file. 
     '''
     # Set up the output path for the figure
-    out_path = Path(f"{save_name}_stability_volatility_analysis_report.png")
+    out_path = Path(save_name).with_name(f"{Path(save_name).stem}_stability_volatility_analysis_report.png")
     if out_path.exists() and not overwrite:
         raise FileExistsError(f"{out_path} exists; set overwrite = True to replace it.")
 
@@ -143,11 +143,10 @@ def stability_analysis_volatility(
 
         # CALCULATE LINEAR FIT & SLOPE IN %
         # Convert filtered timestamps to numerical minutes/hours from the new start point
-        time_minutes = df_filtered['t_min'].values - df_filtered['t_min'].min()
+        time_minutes = temp_df['t_min'].values - temp_df['t_min'].min()
         time_hours = time_minutes / 60.0
-        current_vals = df_filtered['current_mean_A'].values
-        current_sem = df_filtered['current_std_A'] / np.sqrt(df_filtered['n_samples']) # sem
-        position = df['position'][0]
+        current_vals = temp_df['current_mean_A'].values
+        current_sem = temp_df['current_std_A'] / np.sqrt(temp_df['n_samples']) # sem
 
         # Fit a first-degree polynomial (straight line): y = mx + c
         coeff, cov = np.polyfit(time_hours, current_vals, 1, w=1/current_sem, cov=True)
@@ -165,11 +164,11 @@ def stability_analysis_volatility(
         slope_pct_per_minute_err = slope_pct_per_hour_err / 60.0
 
         # Extract info for the title
-        experiment_date = df_filtered['timestamp'].iloc[0].strftime('%Y-%m-%d')
+        experiment_date = temp_df['timestamp'].iloc[0].strftime('%Y-%m-%d')
 
         print("LINEAR FIT REPORT")
-        print(f"New Start Time: {df_filtered['timestamp'].iloc[0].strftime('%I:%M %p')}")
-        print(f"New Start Time: {df_filtered['timestamp'].iloc[-1].strftime('%I:%M %p')}")
+        print(f"New Start Time: {temp_df['timestamp'].iloc[0].strftime('%I:%M %p')}")
+        print(f"New End Time: {temp_df['timestamp'].iloc[-1].strftime('%I:%M %p')}")
         print(f"Mean Current (Filtered Window): {mean_current:.6e} A")
         print(f"Absolute Slope: {slope:.6e} A/hour")
         print(f"Relative Slope (%): {slope_pct_per_hour:.4f} ± {slope_pct_per_hour_err:.4f} % per hour")
@@ -191,8 +190,8 @@ def stability_analysis_volatility(
 
         # LEFT PLOT: Long-term Time Evolution & Drift
         
-        ax1.errorbar(df_filtered['timestamp'], current_vals, yerr=current_sem, linewidth=1, fmt='o', markersize=3, elinewidth=1, capsize=2)
-        ax1.plot(df_filtered['timestamp'], fit_line, linestyle='-', linewidth=1.5,
+        ax1.errorbar(temp_df['timestamp'], current_vals, yerr=current_sem, linewidth=1, fmt='o', markersize=3, elinewidth=1, capsize=2)
+        ax1.plot(temp_df['timestamp'], fit_line, linestyle='-', linewidth=1.5,
                 label=f'Linear Fit - Position {pos} ({slope_pct_per_hour:+.3f}% / hr)')
 
         # RIGHT PLOT: Short-term Step Volatility Histogram
@@ -217,7 +216,7 @@ def stability_analysis_volatility(
     ax1.grid(True, which="both", linestyle='--', alpha=0.5, color='#b0b0b0')
 
     ax1.xaxis.set_major_formatter(mdates.DateFormatter('%I:%M %p'))
-    ax1.xaxis.set_major_locator(mdates.MinuteLocator(byminute=[0, 30]))
+    ax1.xaxis.set_major_locator(mdates.MinuteLocator(interval=10))
     ax1.tick_params(axis='x', rotation=30)
     ax1.legend(loc='upper left', frameon=True, edgecolor='#b0b0b0')
     # RIGHT PLOT: Short-term Step Volatility Histogram
@@ -227,12 +226,10 @@ def stability_analysis_volatility(
     ax2.grid(True, linestyle='--', alpha=0.5, color='#b0b0b0')
     ax2.legend(loc='upper right', frameon=True, edgecolor='#b0b0b0')
 
-    
-
     plt.tight_layout()
 
     if save:
-        plt.savefig(f"{out_path}.png", dpi=600, bbox_inches='tight')
+        plt.savefig(f"{out_path}", dpi=600, bbox_inches='tight')
 
     plt.tight_layout()
 
