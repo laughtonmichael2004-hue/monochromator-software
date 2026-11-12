@@ -7,7 +7,7 @@ from packs.ana.ana_utils import stability_analysis
 from packs.ana.ana_utils import stability_analysis_volatility
 
 
-def acq(config_file):
+def ana(config_file):
     print("Starting the analysis pack...")
 
     # Take the full path

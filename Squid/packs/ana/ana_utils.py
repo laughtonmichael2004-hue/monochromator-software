@@ -16,6 +16,7 @@ def stability_analysis(
     Output values are printed to the console and the plot is saved as a .png file. 
     '''
     # Set up the outpath for the figure
+    # need to remove the txt?
     out_path = Path(f"{save_name}_stability_analysis_report.png")
     if out_path.exists() and not overwrite:
         raise FileExistsError(f"{out_path} exists; set overwrite = True to replace it.")
@@ -55,7 +56,8 @@ def stability_analysis(
 
     # TIME AXIS FORMATTING (12-hour system, hour & half-hour ticks)
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%I:%M %p'))
-    ax.xaxis.set_major_locator(mdates.MinuteLocator(byminute=[0, 30]))
+    # ax.xaxis.set_major_locator(mdates.MinuteLocator(byminute=[0, 30]))
+    ax.xaxis.set_major_locator(mdates.MinuteLocator(interval=10))
     fig.autofmt_xdate(rotation=30, ha='right')
 
     if save:
