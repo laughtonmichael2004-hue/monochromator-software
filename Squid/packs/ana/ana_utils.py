@@ -8,12 +8,17 @@ def stability_analysis(
         save_name: str,
         overwrite: bool = False,
         no_show: bool = False,
-        save: bool = True,
-        ):
+        save: bool = False,
+        save_txt: bool = False):
     '''
     For now only take the file and produce the full stability analysis report. 
 
     Output values are printed to the console and the plot is saved as a .png file. 
+
+    It will sort the data based on the position and is able to plot multiple positions at once.
+
+    Assumes data is as follows:
+    |timestamp|position|angle_deg|epos|current_mean_A|current_std_A|n_samples|
     '''
     # Set up the outpath for the figure
     # need to remove the txt?
@@ -29,6 +34,7 @@ def stability_analysis(
 
     # Convert timestamps to datetime objects
     df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df['t_min'] = (df['timestamp'] - df['timestamp'].iloc[0]).dt.total_seconds() / 60 # Add 't_min' column as its useful to have
 
     # Extract date for the title
     experiment_date = df['timestamp'].iloc[0].strftime('%Y-%m-%d')
@@ -45,13 +51,28 @@ def stability_analysis(
     # Plotting
     fig, ax = plt.subplots(figsize=(11, 5.5))
 
-    ax.errorbar(df['timestamp'], df['current_mean_A'], yerr=df['current_std_A'] / np.sqrt(df['n_samples']), color='#004488', linestyle='-', linewidth=1, fmt='o', markersize=3, elinewidth=1, capsize=2, label='Photocurrent (mean ± std)')
+    # For loop to pick out the data by the position and then plot on the graph...
+    position_vals = list(set(df['position']))
+
+    # Is sort of redundant if only one postion hole taken...
+    for pos in position_vals:
+        out_path_txt = Path(f"{save_name}_{pos}.txt")
+        if out_path_txt.exists() and not overwrite:
+            raise FileExistsError(f"{out_path_txt} exists; set overwrite = True to replace it.")
+
+        temp_df = df[df['position']==pos]
+
+        ax.errorbar(temp_df['timestamp'], temp_df['current_mean_A'], yerr=temp_df['current_std_A'] / np.sqrt(temp_df['n_samples']), linestyle='-', linewidth=1, fmt='o', markersize=3, elinewidth=1, capsize=2, label=f'Position - {pos}')
+
+        if save_txt:
+            temp_df.to_csv(f"{out_path}_{pos}.txt", index=False)
+
 
     ax.set_title(f'Deuterium Lamp Stability Test - 7.8 degrees - {experiment_date}', fontsize=14)
     ax.set_xlabel('Time of Day', fontsize=12, labelpad=10)
     ax.set_ylabel('Photocurrent (A)', fontsize=12, labelpad=10)
     ax.set_yscale('log')
-
+    ax.legend()
     ax.grid(True, linestyle='--', alpha=0.5, color='#b0b0b0')
 
     # TIME AXIS FORMATTING (12-hour system, hour & half-hour ticks)
@@ -73,8 +94,9 @@ def stability_analysis_volatility(
         save_name: str,
         overwrite: bool = False,
         no_show: bool = False,
-        save: bool = True,
-        filter_window: tuple[float, float] = (30.0, 1000.0),
+        save: bool = False,
+        save_txt: bool = False,
+        filter_window: tuple[float, float] = (30.0, 1000.0), # Window accounts for warmup and then any other changes
         ):
     '''
     Take the stability file and produce the windowed linear fit and volatility report. 
@@ -94,6 +116,7 @@ def stability_analysis_volatility(
 
     # Convert timestamps to datetime objects
     df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df['t_min'] = (df['timestamp'] - df['timestamp'].iloc[0]).dt.total_seconds() / 60 # Add 't_min' column as its useful to have
 
     # Extract date for the title
     experiment_date = df['timestamp'].iloc[0].strftime('%Y-%m-%d')
@@ -102,51 +125,92 @@ def stability_analysis_volatility(
     df_filtered = df[df['t_min'] >= filter_window[0]].copy()
     df_filtered = df_filtered[df_filtered['t_min'] <= filter_window[1]].copy()
 
-    # Caluculate linear fit and the slope in %
-    # Convert filtered timestamps to numerical minutes/hours from the new start point
-    time_minutes = df_filtered['t_min'].values - df_filtered['t_min'].min()
-    time_hours = time_minutes / 60.0
-    current_vals = df_filtered['current_mean_A'].values
-    current_stds = df_filtered['current_std_A'] / np.sqrt(df_filtered['n_samples'])
-
-    # Fit a first-degree polynomial (straight line): y = mx + c
-    slope, intercept = np.polyfit(time_hours, current_vals, 1, w=1/current_stds)
-    fit_line = slope * time_hours + intercept
-
-    # Calculate relative slope percentage based on the global mean of this window
-    mean_current = np.mean(current_vals)
-    slope_pct_per_hour = (slope / mean_current) * 100
-    slope_pct_per_minute = slope_pct_per_hour / 60.0
-
-    print("LINEAR FIT REPORT")
-    print(f"New Start Time: {df_filtered['timestamp'].iloc[0].strftime('%I:%M %p')}")
-    print(f"New End Time: {df_filtered['timestamp'].iloc[-1].strftime('%I:%M %p')}")
-    print(f"Mean Current (Filtered Window): {mean_current:.6e} A")
-    print(f"Absolute Slope: {slope:.6e} A/hour")
-    print(f"Relative Slope (%): {slope_pct_per_hour:.4f} % per hour")
-    print(f"Relative Slope (%): {slope_pct_per_minute:.6f} % per minute")
-
-    # Compute the step-by-step differences
-    step_diffs = np.diff(current_vals)
-    relative_diffs_pct = (step_diffs / current_vals[:-1]) * 100
-    mean_step = np.mean(relative_diffs_pct)
-    std_step = np.std(relative_diffs_pct)
-
-    print("\nSTEP-TO-STEP VOLATILITY REPORT")
-    print(f"Number of steps analyzed: {len(relative_diffs_pct)}")
-    print(f"Average step variation: {mean_step:+.4f} %")
-    print(f"Step variation standard deviation: {std_step:.4f} %")
+    position_vals = list(set(df_filtered['position']))
 
     # Plotting
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6), gridspec_kw={'width_ratios': [2, 1.2]})
+    
+    # Is sort of redundant if only one postion hole taken...
+    for pos in position_vals:
+        out_path_txt = Path(f"{save_name}_{pos}.txt")
+        if out_path_txt.exists() and not overwrite:
+            raise FileExistsError(f"{out_path_txt} exists; set overwrite = True to replace it.")
+
+        temp_df = df_filtered[df_filtered['position']==pos]
+
+        if save_txt:
+            temp_df.to_csv(f"{out_path}_{pos}.txt", index=False)
+
+        # CALCULATE LINEAR FIT & SLOPE IN %
+        # Convert filtered timestamps to numerical minutes/hours from the new start point
+        time_minutes = df_filtered['t_min'].values - df_filtered['t_min'].min()
+        time_hours = time_minutes / 60.0
+        current_vals = df_filtered['current_mean_A'].values
+        current_sem = df_filtered['current_std_A'] / np.sqrt(df_filtered['n_samples']) # sem
+        position = df['position'][0]
+
+        # Fit a first-degree polynomial (straight line): y = mx + c
+        coeff, cov = np.polyfit(time_hours, current_vals, 1, w=1/current_sem, cov=True)
+        slope, intercept = coeff
+        param_errors = np.sqrt(np.diag(cov))
+        slope_error = param_errors[0]
+        fit_line = slope * time_hours + intercept
+
+        # Calculate relative slope percentage based on the global mean of this window
+        mean_current = current_vals.mean()
+        current_std_total = current_vals.std()
+        slope_pct_per_hour = (slope / mean_current) * 100
+        slope_pct_per_hour_err = slope_pct_per_hour * np.sqrt((slope_error / slope)**2 + (current_std_total/mean_current)**2)
+        slope_pct_per_minute = slope_pct_per_hour / 60.0
+        slope_pct_per_minute_err = slope_pct_per_hour_err / 60.0
+
+        # Extract info for the title
+        experiment_date = df_filtered['timestamp'].iloc[0].strftime('%Y-%m-%d')
+
+        print("LINEAR FIT REPORT")
+        print(f"New Start Time: {df_filtered['timestamp'].iloc[0].strftime('%I:%M %p')}")
+        print(f"New Start Time: {df_filtered['timestamp'].iloc[-1].strftime('%I:%M %p')}")
+        print(f"Mean Current (Filtered Window): {mean_current:.6e} A")
+        print(f"Absolute Slope: {slope:.6e} A/hour")
+        print(f"Relative Slope (%): {slope_pct_per_hour:.4f} ± {slope_pct_per_hour_err:.4f} % per hour")
+        print(f"Relative Slope (%): {slope_pct_per_minute:.6f} ± {slope_pct_per_minute_err:.4f} % per minute")
+
+        # COMPUTE POINT-BY-POINT RELATIVE DIFFERENCES
+        step_diffs = np.diff(current_vals)
+        relative_diffs_pct = (step_diffs / current_vals[:-1]) * 100
+        mean_step = np.mean(relative_diffs_pct)
+        std_step = np.std(relative_diffs_pct)
+
+        print("\nSTEP-TO-STEP VOLATILITY REPORT")
+        print(f"Number of steps analyzed: {len(relative_diffs_pct)}")
+        print(f"Average step variation: {mean_step:+.4f} %")
+        print(f"Step variation standard deviation: {std_step:.4f} %")
+
+        # PLOTTING
+        # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6), gridspec_kw={'width_ratios': [2, 1.2]})
+
+        # LEFT PLOT: Long-term Time Evolution & Drift
+        
+        ax1.errorbar(df_filtered['timestamp'], current_vals, yerr=current_sem, linewidth=1, fmt='o', markersize=3, elinewidth=1, capsize=2)
+        ax1.plot(df_filtered['timestamp'], fit_line, linestyle='-', linewidth=1.5,
+                label=f'Linear Fit - Position {pos} ({slope_pct_per_hour:+.3f}% / hr)')
+
+        # RIGHT PLOT: Short-term Step Volatility Histogram
+        counts, bins, patches = ax2.hist(relative_diffs_pct, bins=25,
+                                    edgecolor='white', alpha=0.7, rwidth=0.9)
+        ax2.axvline(mean_step, linestyle='--', linewidth=1.5,
+            label=f'Mean Step - Position {pos} \n({mean_step:+.3f}%)')
+        stats_box = f"$\\sigma$: {std_step:.3f}% \nSteps count: {len(relative_diffs_pct)}"
+        ax2.text(0.05, 0.95, stats_box, transform=ax2.transAxes, fontsize=9,
+            verticalalignment='top', bbox=dict(boxstyle='round,pad=0.5', facecolor='white', edgecolor='#b0b0b0', alpha=0.8))
+
+
+        
+    # Plotting
+    #fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6), gridspec_kw={'width_ratios': [2, 1.2]})
 
     # LEFT PLOT: (Windowed) Long-term Time Evolution & Drift
     ax1.set_yscale('log')
-    ax1.errorbar(df_filtered['timestamp'], current_vals, yerr=current_stds, color='#004488', linestyle='-', linewidth=1, fmt='o', markersize=3, elinewidth=1, capsize=2, label='Photocurrent')
-    ax1.plot(df_filtered['timestamp'], fit_line, color='#e32219', linestyle='-', linewidth=1.5,
-            label=f'Linear Fit ({slope_pct_per_hour:+.3f}% / hr)')
-
-
     ax1.set_title(f'Deuterium Lamp Stability & Linear Fit — {experiment_date}', fontsize=14)
     ax1.set_xlabel('Time of Day', fontsize=12, labelpad=10)
     ax1.set_ylabel('Photocurrent (A) — Log Scale', fontsize=12, labelpad=10)
@@ -156,22 +220,14 @@ def stability_analysis_volatility(
     ax1.xaxis.set_major_locator(mdates.MinuteLocator(byminute=[0, 30]))
     ax1.tick_params(axis='x', rotation=30)
     ax1.legend(loc='upper left', frameon=True, edgecolor='#b0b0b0')
-
     # RIGHT PLOT: Short-term Step Volatility Histogram
-    counts, bins, patches = ax2.hist(relative_diffs_pct, bins=25, color='#004488',
-                                    edgecolor='white', alpha=0.85, rwidth=0.9)
-    ax2.axvline(mean_step, color='#e32219', linestyle='--', linewidth=1.5,
-            label=f'Mean Step \n({mean_step:+.3f}%)')
-
     ax2.set_title('Step-by-Step $\\sigma$ Distribution', fontsize=14)
     ax2.set_xlabel('Relative Variation vs Previous Point (%)', fontsize=12, labelpad=10)
     ax2.set_ylabel('Frequency (Count)', fontsize=12, labelpad=10)
     ax2.grid(True, linestyle='--', alpha=0.5, color='#b0b0b0')
     ax2.legend(loc='upper right', frameon=True, edgecolor='#b0b0b0')
 
-    stats_box = f"$\\sigma$: {std_step:.3f}% \nSteps count: {len(relative_diffs_pct)}"
-    ax2.text(0.05, 0.95, stats_box, transform=ax2.transAxes, fontsize=9,
-            verticalalignment='top', bbox=dict(boxstyle='round,pad=0.5', facecolor='white', edgecolor='#b0b0b0', alpha=0.8))
+    
 
     plt.tight_layout()
 
